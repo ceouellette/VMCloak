@@ -11,7 +11,7 @@ log = logging.getLogger(__name__)
 
 class AdobePdf(Dependency):
     name = "adobepdf"
-    default = "9.0.0"
+    default = "11.0.0"
     recommended = True
     exes = [{
         "version": "9.0.0",
@@ -51,13 +51,8 @@ class AdobePdf(Dependency):
         "sha1": "fe6808d5d11e94dc5581f33ed386ce552f0c84d6",
     }, {
         "version": "11.0.0",
-        "urls": [
-            "http://ardownload.adobe.com/pub/adobe/reader/win/11.x/11.0.00/en_US/AdbeRdr11000_en_US.exe",
-            "ftp://ftp.adobe.com/pub/adobe/reader/win/11.x/11.0.00/en_US/AdbeRdr11000_en_US.exe",
-            "https://cuckoo.sh/vmcloak/AdbeRdr11000_en_US.exe",
-        ],
+        "url": "http://ardownload.adobe.com/pub/adobe/reader/win/11.x/11.0.00/en_US/AdbeRdr11000_en_US.exe",
         "sha1": "e7dd04e037c40b160a2f01db438dba9ea0b12c52",
-        "filename": "AdbeRdr11000_en_US.exe",
     }, {
         "version": "11.0.2",
         "url": "https://cuckoo.sh/vmcloak/AdbeRdr11002_en_US.exe",
