@@ -9,9 +9,13 @@ class Firefox(Dependency):
     name = "firefox"
     default = "41.0.2"
     exes = [{
+        "version": "115.0.3esr",
+        "url": "https://ftp.mozilla.org/pub/firefox/releases/115.0.3esr/win64/en-US/Firefox%20Setup%20115.0.3esr.exe",
+        "sha1": "7b0d94edd4d85d8968f1bccc9e6a4445faa7cd61",
+    }, {
         "version": "41.0.2",
-        "url": "https://cuckoo.sh/vmcloak/Firefox_Setup_41.0.2.exe",
-        "sha1": "c5118ca76f0cf6ecda5d2b9292bf191525c9627a",
+        "url": "https://sourceforge.net/projects/portableapps/files/Mozilla%20Firefox%2C%20Portable%20Ed./Mozilla%20Firefox%2C%20Portable%20Edition%2041.0.2/FirefoxPortable_41.0.2_English.paf.exe/download",
+        "sha1": "fc380944986ac423a9b7d2add68d5df6b3561c8d",
     }, {
         "version": "60.0.2",
         "url": "https://cuckoo.sh/vmcloak/firefox_60_0_2.exe",
