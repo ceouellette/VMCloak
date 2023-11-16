@@ -1,0 +1,10 @@
+Metadata-Version: 1.0
+Name: VMCloak
+Version: 0.4.8
+Summary: Automated Virtual Machine Generation and Cloaking for Cuckoo Sandbox.
+Home-page: https://github.com/hatching/vmcloak
+Author: Hatching B.V.
+Author-email: info@hatching.io
+License: GPLv3
+Description: UNKNOWN
+Platform: UNKNOWN

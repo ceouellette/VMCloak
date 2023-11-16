@@ -1,0 +1,55 @@
+#!/bin/sh
+# Copyright (C) 2014-2015 Jurriaan Bremer.
+# This file is part of VMCloak - http://www.vmcloak.org/.
+# See the file 'docs/LICENSE.txt' for copying permission.
+
+# Credits to Mark Schloesser, https://github.com/rep/cuckoo-contrib
+
+if [ "$1" = "-h" ]; then
+    echo "Usage: $0 [ip_range/cidr] [interfaces..]"
+    echo "  $0 192.168.57.0/24 eth0 eth1"
+    echo
+    echo "Defaults to:"
+    echo "  $0 192.168.56.0/24 eth0 wlan0"
+    exit
+fi
+
+# Fetch the IP range and CIDR.
+if [ "$#" -ne 0 ]; then
+    VBOXNET="$1"
+    shift
+else
+    VBOXNET="192.168.56.0/24"
+fi
+
+# Fetch the interfaces.
+if [ "$#" -ne 0 ]; then
+    INTERFACES="$*"
+else
+    INTERFACES="eth0 wlan0"
+fi
+
+iptables -F
+iptables -t nat -F
+
+for i in $INTERFACES; do
+    iptables -t nat -A POSTROUTING -o $i -s "$VBOXNET" -j MASQUERADE
+done
+
+# Default drop.
+iptables -P FORWARD DROP
+
+# Existing connections.
+iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+# Accept connections from vboxnet to the whole internet.
+iptables -A FORWARD -s "$VBOXNET" -j ACCEPT
+
+# Internal traffic.
+iptables -A FORWARD -s $VBOXNET -d $VBOXNET -j ACCEPT
+
+# Log stuff that reaches this point, could be noisy though.
+iptables -A FORWARD -j LOG
+
+# Actually enable forwarding of packets. This is Debian/Ubuntu specific.
+echo 1 > /proc/sys/net/ipv4/ip_forward

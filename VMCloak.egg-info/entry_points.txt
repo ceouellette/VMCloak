@@ -1,0 +1,3 @@
+[console_scripts]
+vmcloak = vmcloak.main:main
+
