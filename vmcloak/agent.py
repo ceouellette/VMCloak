@@ -6,7 +6,7 @@ import io
 import logging
 import requests
 
-from vmcloak.misc import wait_for_host
+from vmcloak.misc import wait_for_agent
 
 log = logging.getLogger(__name__)
 
@@ -48,18 +48,22 @@ class Agent(object):
         environ = self.get("/environ").json()["environ"]
         return environ if value is None else environ.get(value, default)
 
-    def execute(self, command, async=False):
+    def execute(self, command, cucksync=False):
         """Execute a command."""
         log.debug("Executing command in VM: %s", command)
-        if async:
-            return self.post("/execute", command=command, async="true")
+        if cucksync:
+            return self.post("/execute", command=command, cucksync="true")
         else:
-            return self.post("/execute", command=command)
+            resp = self.post("/execute", command=command).json()
+            return {
+                "exit_code": resp.get("exit_code"), "error": resp.get("error"),
+                "stdout": resp.get("stdout"), "stderr": resp.get("stderr")
+            }
 
-    def execpy(self, filepath, async=False):
+    def execpy(self, filepath, cucksync=False):
         """Execute a Python file."""
-        if async:
-            return self.post("/execpy", filepath=filepath, async="true")
+        if cucksync:
+            return self.post("/execpy", filepath=filepath, cucksync="true")
         else:
             return self.post("/execpy", filepath=filepath)
 
@@ -74,19 +78,26 @@ class Agent(object):
 
     def shutdown(self):
         """Power off the machine."""
-        self.execute("shutdown -s -t 0", async=True)
+        # Use 1 second timer with cucksync to prevent the machine from shutting
+        # down while a response is being sent or before it is sent.
+        self.execute("shutdown -s -t 1", cucksync=True)
 
     def reboot(self):
         """Reboot the machine."""
-        self.execute("shutdown -r -t 0", async=True)
+        # Use 1 second timer with cucksync to prevent the machine from shutting
+        # down while a response is being sent or before it is sent.
+        self.execute("shutdown -r -t 1", cucksync=True)
 
     def kill(self):
         """Kill the Agent."""
         self.get("/kill")
 
-    def killprocess(self, process_name):
+    def killprocess(self, process_name, force=True):
         """Terminate a process."""
-        self.execute("taskkill /F /IM %s" % process_name)
+        cmd = f"taskkill /IM {process_name}"
+        if force:
+            cmd += " /F"
+        self.execute(cmd)
 
     def hostname(self, hostname):
         """Assign a new hostname."""
@@ -102,7 +113,7 @@ class Agent(object):
         command = (
             "netsh interface ip set address name=\"%s\" static %s %s %s 1"
         ) % (interface, ipaddr, netmask, gateway)
-
+        log.debug("Executing command in VM: %s", command)
         try:
             session = requests.Session()
             session.trust_env = False
@@ -111,12 +122,15 @@ class Agent(object):
                 "http://%s:%s/execute" % (self.ipaddr, self.port),
                 data={"command": command}, timeout=5
             )
-        except requests.exceptions.ReadTimeout:
+        except requests.exceptions.ConnectionError:
             pass
 
         # Now wait until the Agent is reachable on the new IP address.
-        wait_for_host(ipaddr, self.port)
         self.ipaddr = ipaddr
+        log.debug(
+            f"Waiting for agent to be reachable on: {self.ipaddr}:{self.port}"
+        )
+        wait_for_agent(self)
 
     def dns_server(self, ipaddr):
         """Set the IP address of the DNS server."""
@@ -127,8 +141,8 @@ class Agent(object):
 
     def upload(self, filepath, contents):
         """Upload a file to the Agent."""
-        if isinstance(contents, basestring):
-            contents = io.BytesIO(str(contents))
+        if isinstance(contents, str):
+            contents = io.BytesIO(contents.encode())
         self.postfile("/store", {"file": contents}, filepath=filepath)
 
     def retrieve(self, filepath):
@@ -155,12 +169,12 @@ class Agent(object):
         )
         self.execute(
             "C:\\vmcloak\\click.exe \"%s\" \"%s\"" %
-            (window_title, button_name), async=True
+            (window_title, button_name), cucksync=True
         )
 
     def resolution(self, width, height):
         """Set the screen resolution of this Virtual Machine."""
         self.execute(
-            "C:\\Python27\\python.exe C:\\vmcloak\\resolution.py %s %s" %
+            "C:\\Python3\\python.exe C:\\vmcloak\\resolution.py %s %s" %
             (width, height)
         )

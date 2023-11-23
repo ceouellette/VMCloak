@@ -14,6 +14,7 @@ config = """
     <Display Level="basic" CompletionNotice="no" SuppressModal="yes" AcceptEula="yes" />
     <PIDKEY Value="%(serial_key)s" />
     <Setting Id="AUTO_ACTIVATE" Value="%(activate)s" />
+    <Updates Enabled="FALSE" />
 </Configuration>
 """
 
@@ -28,6 +29,7 @@ officever = {
 class Office(Dependency):
     name = "office"
     default = "2010"
+    tags = ["office"]
 
     def init(self):
         self.isopath = None
@@ -55,9 +57,8 @@ class Office(Dependency):
             return False
 
     def run(self):
-        if self.i.vm == "virtualbox":
-            self.disable_autorun()
-            self.m.attach_iso(self.isopath)
+        self.disable_autorun()
+        self.m.attach_iso(self.isopath)
 
         self.a.upload(
             "C:\\config.xml",
@@ -309,8 +310,7 @@ class Office(Dependency):
             officever[self.version]
         )
 
-        if self.i.vm == "virtualbox":
-            self.m.detach_iso()
+        self.m.detach_iso()
 
 class Office2007(Office, Dependency):
     """Backwards compatibility."""
