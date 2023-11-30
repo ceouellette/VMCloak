@@ -14,8 +14,8 @@ class Firefox(Dependency):
         "sha1": "7b0d94edd4d85d8968f1bccc9e6a4445faa7cd61",
     }, {
         "version": "41.0.2",
-        "url": "https://ftp.mozilla.org/pub/firefox/releases/41.0.2/win32/en-US/Firefox%20Setup%2041.0.2.exe",
-        "sha1": "c5118ca76f0cf6ecda5d2b9292bf191525c9627a",
+        "url": "https://download.mozilla.org/?os=win&lang=pt-BR&product=firefox-41.0.2",
+        "sha1": "38e0126dc8a806849b079a0684da8635757a5421",
     }, {
         "version": "60.0.2",
         "url": "https://cuckoo.sh/vmcloak/firefox_60_0_2.exe",
