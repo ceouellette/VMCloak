@@ -10,7 +10,6 @@ from vmcloak.abstract import Dependency
 class Chrome(Dependency):
     name = "chrome"
     default = "46.0.2490.80"
-    tags = ["browser_chrome"]
     exes = [{
         "version": "46.0.2490.80",
         "url": "https://cuckoo.sh/vmcloak/googlechromestandaloneenterprise.msi",

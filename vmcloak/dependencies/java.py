@@ -43,10 +43,8 @@ deployment.expiration.check.enabled.locked
 
 class Java(Dependency):
     name = "java"
-    default = "7u80"
+    default = "jdk7"
     recommended = True
-    multiversion = True
-    tags = ["java"]
     exes = [{
     # http://www.oracle.com/technetwork/java/javase/downloads/java-archive-downloads-javase7-521261.html
     # https://www.java.com/pt_BR/download/manual.jsp
@@ -943,10 +941,10 @@ class Java(Dependency):
         if version.startswith("7"):
             self.a.upload("C:\\Windows\\Sun\\Java\\Deployment\\deployment.config", java7deploymentconfig)
             self.a.upload("C:\\Windows\\Sun\\Java\\Deployment\\deployment.properties", java7deploymentproperties)
-            self.a.execute("C:\\java.exe /s", cucksync=True)
+            self.a.execute("C:\\java.exe /s", async=True)
         else:
             self.a.upload("C:\\config.cfg", config)
-            self.a.execute("C:\\java.exe INSTALLCFG=C:\\config.cfg", cucksync=True)
+            self.a.execute("C:\\java.exe INSTALLCFG=C:\\config.cfg", async=True)
 
         # Wait until java.exe & javaw.exe are no longer running.
         self.wait_process_exit("java.exe")
@@ -959,30 +957,9 @@ class Java(Dependency):
 
         if self.i.osversion == "winxp" or self.i.osversion == "win7x86":
             self.a.execute("reg add \"HKEY_LOCAL_MACHINE\\SOFTWARE\\JavaSoft\\Java Update\\Policy\" /v EnableJavaUpdate /t REG_DWORD /d 0 /f")
-        else:
-            self.a.execute(
-                "reg add \"HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\JavaSoft"
-                "\\Java Update\\Policy\" /v EnableJavaUpdate /t REG_DWORD /d 0 /f"
-            )
-            self.a.execute(
-                "reg add \"HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\"
-                "JavaSoft\\Java Update\\Policy\" /v EnableAutoUpdateCheck "
-                "/t REG_DWORD /d 0 /f"
-            )
-            self.a.execute(
-                "reg add \"HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\JavaSoft"
-                "\\Java Update\\Policy\" /v NotifyDownload /t REG_DWORD /d 0 /f"
-            )
 
-        self.a.execute(
-            "reg delete \"HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows"
-            "\\CurrentVersion\\Run\" /v SunJavaUpdateSched /f"
-        )
-        self.a.execute(
-            "reg delete \"HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\"
-            "Microsoft\\Windows\\CurrentVersion\\Run\" "
-            "/v SunJavaUpdateSched /f"
-        )
+        if self.i.osversion == "win7x64":
+            self.a.execute("reg add \"HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\JavaSoft\\Java Update\\Policy\" /v EnableJavaUpdate /t REG_DWORD /d 0 /f")
 
 class Java7(Java, Dependency):
     """Backwards compatibility."""

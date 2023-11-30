@@ -5,13 +5,14 @@
 
 import logging
 import os.path
+import random
 import re
 import shutil
 import subprocess
 import tempfile
 import time
-from ipaddress import ip_network
 
+from vmcloak.conf import load_hwconf
 from vmcloak.constants import VMCLOAK_ROOT
 from vmcloak.exceptions import DependencyError
 from vmcloak.misc import (
@@ -19,30 +20,168 @@ from vmcloak.misc import (
     download_file
 )
 from vmcloak.paths import get_path
+from vmcloak.rand import random_serial, random_uuid, random_string
 from vmcloak.repository import deps_path
 from vmcloak.verify import valid_serial_key
-from vmcloak.rand import random_string
 
 log = logging.getLogger(__name__)
 
 GENISOIMAGE_WARNINGS = [
-    b"Warning: creating filesystem that does not conform to ISO-9660.",
-    b"Warning: creating filesystem that does not conform to ISO-9660. "
-    b"Warning: creating filesystem with (nonstandard) Joliet extensions but "
-    b"without (standard) Rock Ridge extensions. It is highly recommended to "
-    b"add Rock Ridge",
+    "Warning: creating filesystem that does not conform to ISO-9660.",
+    "Warning: creating filesystem that does not conform to ISO-9660. "
+    "Warning: creating filesystem with (nonstandard) Joliet extensions but "
+    "without (standard) Rock Ridge extensions. It is highly recommended to "
+    "add Rock Ridge",
 ]
+
+class Machinery(object):
+    FIELDS = {}
+    vm_dir_required = True
+    data_dir_required = True
+
+    def __init__(self, name):
+        self.name = name
+        self.network_idx = 0
+
+    def vminfo(self, element=None):
+        """Returns a dictionary with all available information for the
+        Virtual Machine."""
+        raise
+
+    def create_vm(self):
+        """Create a new Virtual Machine."""
+        raise
+
+    def delete_vm(self):
+        """Delete an existing Virtual Machine and its associated files."""
+        raise
+
+    def ramsize(self, ramsize):
+        """Modify the amount of RAM available for this Virtual Machine."""
+        raise
+
+    def vramsize(self, vramsize):
+        """Modify the amount of Video memory available for this Virtual
+        Machine."""
+        raise
+
+    def os_type(self, osversion):
+        """Set the OS type."""
+        raise
+
+    def create_hd(self, fsize):
+        """Create a harddisk."""
+        raise
+
+    def immutable_hd(self):
+        """Make a harddisk immutable or normal."""
+        raise
+
+    def remove_hd(self):
+        """Remove a harddisk."""
+        raise
+
+    def clone_hd(self, hdd_inpath, hdd_outpath):
+        """Clone a harddisk."""
+        raise
+
+    def cpus(self, count):
+        """Set the number of CPUs to assign to this Virtual Machine."""
+        raise
+
+    def attach_iso(self, iso):
+        """Attach a ISO file as DVDRom drive."""
+        raise
+
+    def detach_iso(self):
+        """Detach the ISO file in the DVDRom drive."""
+        raise
+
+    def set_field(self, key, value):
+        """Set a specific field of a Virtual Machine."""
+        raise
+
+    def modify_mac(self, mac=None):
+        """Modify the MAC address of a Virtual Machine."""
+        raise
+
+    def network_index(self):
+        """Get the index for the next network interface."""
+        ret = self.network_idx
+        self.network_idx += 1
+        return ret
+
+    def hostonly(self, macaddr=None, index=1):
+        """Configure a hostonly adapter for the Virtual Machine."""
+        raise
+
+    def nat(self, macaddr=None, index=1):
+        """Configure NAT for the Virtual Machine."""
+        raise
+
+    def hwvirt(self, enable=True):
+        """Enable or disable the usage of Hardware Virtualization."""
+        raise
+
+    def start_vm(self, visible=False):
+        """Start the associated Virtual Machine."""
+        raise
+
+    def snapshot(self, label):
+        """Take a snapshot of the associated Virtual Machine."""
+        raise
+
+    def stopvm(self):
+        """Stop the associated Virtual Machine."""
+        raise
+
+    def list_settings(self):
+        """List all settings of a Virtual Machine."""
+        raise
+
+    def init_vm(self, profile):
+        """Initialize fields as specified by `FIELDS`."""
+        hwconf = load_hwconf(profile=profile)
+
+        def _init_vm(path, fields):
+            for key, value in fields.items():
+                key = path + "/" + key
+                if isinstance(value, dict):
+                    _init_vm(key, value)
+                else:
+                    if isinstance(value, tuple):
+                        k, v = value
+                        if k not in hwconf or not hwconf[k]:
+                            value = "To be filled by O.E.M."
+                        else:
+                            if k not in config:
+                                config[k] = random.choice(hwconf[k])
+
+                            value = config[k][v]
+
+                            # Some values have to be generated randomly.
+                            if value is not None:
+                                if value.startswith("<SERIAL>"):
+                                    length = int(value.split()[-1])
+                                    value = random_serial(length)
+                                elif value.startswith("<UUID>"):
+                                    value = random_uuid()
+
+                    if value is None:
+                        value = "To be filled by O.E.M."
+
+                    log.debug("Setting %r to %r.", key, value)
+                    ret = self.set_field(key, value)
+                    if ret:
+                        log.debug(ret)
+
+        config = {}
+        _init_vm("", self.FIELDS)
+
 
 class OperatingSystem(object):
     # Short name for this OS.
     name = None
-
-    # Lowercase name of the OS: windows, ubuntu, etc.
-    os_name = None
-
-    # The version of the OS, 7, 10, 1804 (in case of ubuntu), etc. Must be a
-    # lowercase string.
-    os_version = None
 
     # Service Pack that is likely being used.
     service_pack = None
@@ -68,9 +207,6 @@ class OperatingSystem(object):
     def __init__(self):
         self.data_path = os.path.join(VMCLOAK_ROOT, "data")
         self.path = os.path.join(self.data_path, self.name)
-        self.bootstrap_path = os.path.join(
-            self.data_path, "bootstrap", self.os_name
-        )
         self.serial_key = None
 
         if self.name is None:
@@ -79,28 +215,12 @@ class OperatingSystem(object):
         if self.osdir is None:
             raise Exception("OSDir has to be provided for OS handler")
 
-    def find_agent_binary(self):
-        """Return the path of the agent binary for the OS name and
-        architecture. Also return the file extension the binary should have
-        when it is copied"""
-        if not os.path.isdir(self.bootstrap_path):
-            raise FileNotFoundError(
-                f"Bootstrap path {self.bootstrap_path} for OS does not exist"
-            )
-
-        agent_arch_file = os.path.join(self.bootstrap_path, "agent", self.arch)
-        with open(agent_arch_file, "r") as fp:
-            agent_name = fp.read().strip()
-
-        return os.path.join(self.bootstrap_path, "agent", agent_name), \
-               os.path.splitext(agent_name)[1]
-
     def configure(self, tempdir, product):
         """Configure the setup with settings provided by the user."""
         self.tempdir = tempdir
         self.product = product
 
-    def isofiles(self, outdir, tmp_dir=None, env_vars={}):
+    def isofiles(self, outdir, tmp_dir=None):
         """Abstract method for writing additional files to the newly created
         ISO file."""
 
@@ -112,7 +232,7 @@ class OperatingSystem(object):
         """Picks the first available mounted directory."""
         mounts = [isomount]
 
-        if isinstance(self.mount, str):
+        if isinstance(self.mount, basestring):
             mounts.append(self.mount)
         else:
             mounts.extend(self.mount)
@@ -121,14 +241,10 @@ class OperatingSystem(object):
             if mount and os.path.isdir(mount) and os.listdir(mount):
                 return mount
 
-    def buildiso(self, mount, newiso, bootstrap, tmp_dir=None, env_vars={}):
+    def buildiso(self, mount, newiso, bootstrap, tmp_dir=None):
         """Builds an ISO file containing all our modifications."""
-        isocreate = get_path("genisoimage")
-        if not isocreate:
-            log.error("Either genisoimage or mkisofs is required!")
-            return False
-
         outdir = tempfile.mkdtemp(dir=tmp_dir)
+
         # Copy all files to our temporary directory as mounted iso files are
         # read-only and we need lowercase (aka case-insensitive) filepaths.
         copytreelower(mount, outdir)
@@ -137,41 +253,22 @@ class OperatingSystem(object):
         shutil.copy(os.path.join(self.path, "boot.img"), outdir)
 
         # Allow the OS handler to write additional files.
-        self.isofiles(outdir, tmp_dir, env_vars=env_vars)
+        self.isofiles(outdir, tmp_dir)
 
-        bootstrap_copy = os.path.join(outdir, self.osdir, "vmcloak")
-        os.makedirs(bootstrap_copy)
-        for fname in os.listdir(self.bootstrap_path):
-            filepath = os.path.join(self.bootstrap_path, fname)
-            if not os.path.isfile(filepath):
-                continue
+        os.makedirs(os.path.join(outdir, self.osdir, "vmcloak"))
 
-            shutil.copy(filepath, os.path.join(bootstrap_copy, fname))
-
-        # Find the correct agent binary for the current OS and architecture.
-        try:
-            agent_path, file_ext = self.find_agent_binary()
-        except FileNotFoundError as e:
-            log.error(
-                f"Failed to find agent file for OS {self.os_name} with "
-                f"architecture: {self.arch}. {e}"
-            )
-            shutil.rmtree(outdir)
-            return False
-
-        # Copy the agent binary to the tmp bootstrap folder with the extension
-        # it should have, but using a normalized name.
-        agent_name = f"{random_string(8, 16)}{file_ext}"
-        shutil.copy(agent_path, os.path.join(bootstrap_copy, agent_name))
-        env_vars["AGENT_FILE"] = agent_name
-        env_vars["AGENT_RUNKEY"] = random_string(8, 16)
-
-        # Write the configuration values for bootstrap.bat.
-        with open(os.path.join(bootstrap_copy, "settings.bat"), "wb") as f:
-            for key, value in env_vars.items():
-                f.write(f"set {key}={value}\n".encode())
+        data_bootstrap = os.path.join(self.data_path, "bootstrap")
+        for fname in os.listdir(data_bootstrap):
+            shutil.copy(os.path.join(data_bootstrap, fname),
+                        os.path.join(outdir, self.osdir, "vmcloak", fname))
 
         copytreeinto(bootstrap, os.path.join(outdir, self.osdir))
+
+        isocreate = get_path("genisoimage")
+        if not isocreate:
+            log.error("Either genisoimage or mkisofs is required!")
+            shutil.rmtree(outdir)
+            return False
 
         args = [
             isocreate, "-quiet", "-b", "boot.img", "-o", newiso,
@@ -182,7 +279,7 @@ class OperatingSystem(object):
             args, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         out, err = p.communicate()
-        warning = re.sub(b"[\\s]+", b" ", err).strip()
+        warning = re.sub("[\\s]+", " ", err).strip()
         if p.wait() or out or warning not in GENISOIMAGE_WARNINGS:
             log.error(
                 "Error creating ISO file (err=%d): %s %s",
@@ -198,7 +295,6 @@ class WindowsAutounattended(OperatingSystem):
     """Abstract wrapper around Windows-based Operating Systems that use the
     autounattend.xml file for automated installation, i.e., Windows 7+."""
 
-    os_name = "windows"
     nictype = "82540EM"
     osdir = os.path.join("sources", "$oem$", "$1")
     dummy_serial_key = None
@@ -207,7 +303,7 @@ class WindowsAutounattended(OperatingSystem):
         "-joliet-long", "-relaxed-filenames", "-allow-limited-size",
     ]
 
-    def _autounattend_xml(self, product, ipaddress, gateway):
+    def _autounattend_xml(self, product):
         values = {
             "PRODUCTKEY": self.serial_key,
             "COMPUTERNAME": random_string(8, 14),
@@ -216,17 +312,15 @@ class WindowsAutounattended(OperatingSystem):
             "PRODUCT": product.upper(),
             "ARCH": self.arch,
             "INTERFACE": self.interface,
-            "IPADDRESS": ipaddress,
-            "DEFAULTGATEWAY": gateway
         }
 
-        buf = open(os.path.join(self.path, "autounattend.xml"), "r").read()
+        buf = open(os.path.join(self.path, "autounattend.xml"), "rb").read()
         for key, value in values.items():
-            buf = buf.replace(f"@{key}@", value)
+            buf = buf.replace("@%s@" % key, value)
 
         return buf
 
-    def isofiles(self, outdir, tmp_dir=None, env_vars={}):
+    def isofiles(self, outdir, tmp_dir=None):
         products = []
 
         product_ini = os.path.join(outdir, "sources", "product.ini")
@@ -262,18 +356,8 @@ class WindowsAutounattended(OperatingSystem):
             )
             self.product = None
 
-        ipnet = ip_network(
-            f"{env_vars['GUEST_GATEWAY']}/{env_vars['GUEST_MASK']}",
-            strict=False
-        )
-
-        unattend_xml = self._autounattend_xml(
-            self.product or product,
-            ipaddress=f"{env_vars['GUEST_IP']}/{ipnet.prefixlen}",
-            gateway=env_vars["GUEST_GATEWAY"]
-        )
-        with open(os.path.join(outdir, "autounattend.xml"), "w") as f:
-            f.write(unattend_xml)
+        with open(os.path.join(outdir, "autounattend.xml"), "wb") as f:
+            f.write(self._autounattend_xml(self.product or product))
 
     def set_serial_key(self, serial_key):
         if serial_key and not valid_serial_key(serial_key):
@@ -292,29 +376,14 @@ class Dependency(object):
     default = None
     recommended = False
     depends = None
-    # Like depends, but specified per os name (win10x64, win7x64, etc)
-    os_depends = {}
-    must_reboot = False
-    # Can multiple versions of this dependency be installed at the same time?
-    multiversion = False
     exes = []
-    tags = []
-    files = []
 
-    # OS versions in this list do not need an exe/installer etc.
-    # If they are here and exes is not empty, do not stop the install.
-    no_exe = []
-
-    data_path = os.path.join(VMCLOAK_ROOT, "data")
-    deps_path = deps_path
-
-    def __init__(self, h=None, m=None, a=None, i=None, installer=None,
+    def __init__(self, h=None, m=None, a=None, i=None,
                  version=None, settings={}):
         self.h = h
         self.m = m
         self.a = a
         self.i = i
-        self.installer = installer
         self.version = version or self.default
         self.arch = h.arch
         self.settings = settings
@@ -334,150 +403,64 @@ class Dependency(object):
             if "target" in exe and exe["target"] != i.osversion:
                 continue
 
-            if "arch" in exe and exe["arch"] != self.arch:
+            if "version" in exe and exe["version"] != self.version:
                 continue
 
-            if "version" in exe and self.version and \
-                    exe["version"] != self.version:
+            if "arch" in exe and exe["arch"] != self.arch:
                 continue
 
             self.exe = exe
             break
         else:
-            if self.exes and self.i.osversion not in self.no_exe:
-                log.error(
-                    f"Could not find the correct installer"
-                    f" {self.name} ({self.version or ''}) for "
-                    f"'{i.osversion}' with "
-                    f"architecture: '{self.arch}'"
-                )
+            if self.exes:
+                log.error("Could not find the correct installer!")
                 raise DependencyError
 
-        # Download the executable/installer or required files if there
-        # are any.
-        if self.exe or self.files:
+        # Download the dependency (if there is any to download).
+        if self.exe:
             self.download()
 
         if self.check() is False:
-            raise DependencyError("Check failed")
-
-    @classmethod
-    def get_dependencies(cls, image):
-        if cls.depends:
-            if isinstance(cls.depends, str):
-                return [cls.depends]
-
-            return cls.depends
-
-        if cls.os_depends:
-            deps = cls.os_depends.get(image.osversion, [])
-            if isinstance(deps, str):
-                return [deps]
-
-            return deps
-
-    def _do_downloads(self, filepaths_urllist_sha1_v):
-        for filepath, urllist, expected_sha1, _, in filepaths_urllist_sha1_v:
-            for url in urllist:
-                success, sha1hash = download_file(url, filepath)
-                if not success:
-                    log.warning(f"Failed to download file from: {url}")
-                    continue
-
-                if expected_sha1 and sha1hash != expected_sha1:
-                    log.warning(
-                        f"Calculated sha1 hash '{sha1hash}' of downloaded "
-                        f"file {filepath} did not match expected hash "
-                        f"'{expected_sha1}'. File source: {url}"
-                    )
-                    os.remove(filepath)
-                    continue
-
-                # No issues with the download, do not download more.
-                break
-
-            if not os.path.isfile(filepath) or os.path.getsize(filepath) == 0:
-                raise DependencyError(
-                    f"No valid file was downloaded from any of the sources: "
-                    f"{', '.join(urllist)}"
-                )
-
-    def _find_downloadable_files(self, download_dictlist):
-        downloadables = []
-        for downloadable_file in download_dictlist:
-            all_urls = []
-            urls = downloadable_file.get("urls")
-            if urls and isinstance(urls, list):
-                all_urls.extend(urls)
-
-            url = downloadable_file.get("url")
-            if url and isinstance(url, str):
-                all_urls.append(url)
-
-            if not all_urls:
-                raise KeyError(
-                    f"No URLs to download file from. Invalid files or exes "
-                    f"entry? {downloadable_file}"
-                )
-
-            filename = downloadable_file.get("filename") or \
-                       filename_from_url(all_urls[0])
-
-            if not filename:
-                raise KeyError(
-                    f"No filename in files/exes entry: {downloadable_file}"
-                )
-
-            downloadables.append(
-                (os.path.join(deps_path, filename),
-                 all_urls, downloadable_file.get("sha1"),
-                 downloadable_file.get("version")),
-            )
-
-        return downloadables
+            raise DependencyError
 
     def download(self):
-        downloadables = []
-        try:
-            if self.exe:
-                exe_downloadable = self._find_downloadable_files([self.exe])
-                # This will always only return 1 downloadable. Access its first
-                # element, which is the filepath.
-                self.filepath = exe_downloadable[0][0]
-                self.filename = os.path.basename(self.filepath)
-                downloadables.extend(exe_downloadable)
+        urls = []
+        if "urls" in self.exe:
+            urls.extend(self.exe["urls"])
+        else:
+            urls.append(self.exe["url"])
 
-            if self.files:
-                downloadables.extend(self._find_downloadable_files(self.files))
-        except KeyError as e:
-            raise DependencyError(f"Unable to get resource. {e}")
+        if "filename" in self.exe:
+            self.filename = self.exe["filename"]
+        else:
+            for url in urls:
+                self.filename = filename_from_url(url)
+                break
 
-        # Check which of the downloadable files already exist.
-        for downloadable in downloadables[:]:
-            filepath, _, expected_sha1sum, version = downloadable
-            # Skip check if we need the latest version. We cannot know what
-            # the download file version is since we never know the hash of the
-            # latest version.
-            if version == "latest":
+        self.filepath = os.path.join(deps_path, self.filename)
+        if (os.path.exists(self.filepath) and "sha1" in self.exe and
+                sha1_file(self.filepath) == self.exe["sha1"]):
+            return
+
+        for url in urls:
+            download_file(url, self.filepath)
+
+            if not os.path.exists(self.filepath):
                 continue
 
-            if not os.path.exists(filepath):
-                continue
+            if "version" in self.exe and self.exe["version"] == "latest":
+                log.info("Got latest version '{}' from '{}', no checksum available!".format(self.filename, url))
+                break
 
-            if expected_sha1sum and expected_sha1sum != sha1_file(filepath):
-                continue
+            if sha1_file(self.filepath) == self.exe["sha1"]:
+                log.info("Got file '{}' from '{}', with matching checksum.".format(self.filename, url))
+                break
+            else:
+                log.warn("The checksum of '{}' from '{}' didn't match!".format(self.filename, url))
+                os.remove(self.filepath)
 
-            # Remove downloadable file from download list because it exists
-            # and it is the expected hash or there was no expected hash.
-            downloadables.remove(downloadable)
-
-        if downloadables:
-            log.debug(
-                f"Downloading (installation) files for dependency "
-                f"'{self.name}'"
-                f" {f'version={self.version}' if self.version else ''}"
-            )
-            self._do_downloads(downloadables)
+        if not os.path.exists(self.filepath):
+            raise DependencyError
 
     def init(self):
         pass
@@ -500,65 +483,27 @@ class Dependency(object):
                            "Windows\\CurrentVersion\\Policies\\Explorer "
                            "/v NoDriveTypeAutoRun /t REG_DWORD /d 255 /f")
 
-    def upload_file(self, filepath, to_machine_filepath):
-        """Upload the specified filepath to the specified machine filepath"""
-        self.a.upload(to_machine_filepath, open(filepath, "rb"))
-
     def upload_dependency(self, filepath):
         """Upload this dependency to the specified filepath."""
-        self.upload_file(self.filepath, filepath)
+        self.a.upload(filepath, open(self.filepath, "rb"))
 
     def wait_process_appear(self, process_name):
         """Wait for a process to appear."""
         while True:
             time.sleep(1)
 
-            for line in self.a.execute("tasklist")["stdout"].split("\n"):
+            for line in self.a.execute("tasklist").json()["stdout"].split("\n"):
                 if line.lower().startswith(process_name.lower()):
                     return
 
-    def wait_process_exit(self, process_name, timeout=None):
+    def wait_process_exit(self, process_name):
         """Wait for a process to exit."""
-        waited = 0
-        cmd = f"tasklist /FO TABLE /NH /FI \"IMAGENAME eq {process_name}\""
         while True:
-            for line in self.a.execute(cmd)["stdout"].split("\n"):
+            time.sleep(1)
+
+            for line in self.a.execute("tasklist").json()["stdout"].split("\n"):
                 if line.lower().startswith(process_name.lower()):
-                    log.debug("Waiting for %s to finish..", process_name)
+                    log.info("Waiting for %s to finish..", process_name)
                     break
             else:
                 break
-
-            if timeout and waited >= timeout:
-                raise TimeoutError(
-                    f"Process '{process_name}' did not exit after {waited} "
-                    f"seconds."
-                )
-
-            time.sleep(1)
-            waited += 1
-
-    def run_powershell_command(self, command):
-        return self.a.execute(
-            f'powershell -ExecutionPolicy bypass "{command}"'
-        )
-
-    def run_powershell_strings(self, powershell_strings):
-        script_winpath = f"c:\\{random_string(6, 10)}.ps1"
-        self.a.upload(script_winpath, powershell_strings)
-        try:
-            return self.a.execute(
-                f"powershell -ExecutionPolicy bypass -File {script_winpath}"
-            )
-        finally:
-            self.a.remove(script_winpath)
-
-    def run_powershell_file(self, powershell_file):
-        script_winpath = f"c:\\{random_string(6, 10)}.ps1"
-        self.upload_file(powershell_file, script_winpath)
-        try:
-            return self.a.execute(
-                f"powershell -ExecutionPolicy bypass -File {script_winpath}"
-            )
-        finally:
-            self.a.remove(script_winpath)
