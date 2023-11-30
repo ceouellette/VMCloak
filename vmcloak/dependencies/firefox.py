@@ -8,7 +8,6 @@ from vmcloak.abstract import Dependency
 class Firefox(Dependency):
     name = "firefox"
     default = "41.0.2"
-    tags = ["browser_firefox"]
     exes = [{
         "version": "115.0.3esr",
         "url": "https://ftp.mozilla.org/pub/firefox/releases/115.0.3esr/win64/en-US/Firefox%20Setup%20115.0.3esr.exe",
