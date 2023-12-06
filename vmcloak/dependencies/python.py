@@ -6,7 +6,7 @@ from vmcloak.abstract import Dependency
 
 class Python(Dependency):
     name = "python"
-    default = "2.7.6"
+    default = "3.7.3"
     exes = [{
         "version": "2.7.6",
         "urls": [
@@ -27,6 +27,24 @@ class Python(Dependency):
         "filename": "python-2.7.13.msi",
         "window_name": "Python 2.7.13 Setup",
         "install_path": "C:\\Python27",
+    }, {
+        "version": "3.7.3",
+        "urls": [
+            "https://www.python.org/ftp/python/3.7.3/python-3.7.3-amd64.exe",
+        ],
+        "sha1": "bd95399506f362e7618d4f6b5a429ebf44714585",
+        "filename": "python-3.7.3-amd64.exe",
+        "window_name": "Python 3.7.3 (64-bit) Setup",
+        "install_path": "C:\\Python3"
+    }, {
+        "version": "3.10.0",
+        "urls": [
+            "https://www.python.org/ftp/python/3.10.0/python-3.10.0-amd64.exe",
+        ],
+        "sha1": "3ee4e92a8ef94c70fb56859503fdc805d217d689",
+        "filename": "python-3.10.0-amd64.exe",
+        "window_name": "Python 3.10.0 (64-bit) Setup",
+        "install_path": "C:\\Python3"
     }]
 
     def run(self):
