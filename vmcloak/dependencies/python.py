@@ -50,7 +50,10 @@ class Python(Dependency):
     def run(self):
         self.upload_dependency("C:\\python.exe")
 
-        self.a.execute("C:\\python.exe PrependPath=1 TargetDir=%s /passive" % self.install_path)
+        if self.version.startswith("2.7"):
+            self.a.execute("C:\\python.exe PrependPath=1 TargetDir='C:\\Python27' /passive")
+        elif self.version.startswith("3"):
+            self.a.execute("C:\\python.exe PrependPath=1 TargetDir='C:\\Python3' /passive")
         self.a.remove("C:\\python.exe")
 
 class Python27(Python, Dependency):
