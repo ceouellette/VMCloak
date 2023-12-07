@@ -4,6 +4,25 @@
 
 from vmcloak.abstract import Dependency
 
+config = """
+<?xml version="1.0"?>
+ <oor:data xmlns:xs="http://www.w3.org/2001/XMLSchema"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xmlns:oor="http://openoffice.org/2001/registry">
+   <dependency file="main" />
+   <oor:component-data xmlns:install="http://openoffice.org/2004/installation"
+   oor:name="Common" oor:package="org.openoffice.Office">
+     <node oor:name="Security">
+       <node oor:name="Scripting">
+         <prop oor:name="MacroSecurityLevel" oor:op="fuse">
+           <value>0</value>
+         </prop>
+       </node>
+     </node>
+   </oor:component-data>
+ </oor:data>
+"""
+
 class LibreOffice(Dependency):
     name = "libreoffice"
     default = "7.6.4"
@@ -16,4 +35,8 @@ class LibreOffice(Dependency):
     def run(self):
         self.upload_dependency("C:\\%s" % self.filename)
         self.a.execute("msiexec /i C:\\%s RebootYesNo=No /qn" % self.filename)
+        self.a.upload(
+            "C:\\Program Files\\LibreOffice\\share\\registry\\macrosConfig.xcd",
+            config
+        )
         self.a.remove("C:\\%s" % self.filename)
