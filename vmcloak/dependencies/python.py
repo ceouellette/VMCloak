@@ -48,10 +48,10 @@ class Python(Dependency):
     }]
 
     def run(self):
-        """There are no installation procedures for this dependency as it is
-        setup by default when installing a new Virtual Machine. In the end,
-        Python is required for running both the Agent as well as Cuckoo's
-        Analyzer anyway."""
+        self.upload_dependency("C:\\python.exe")
+
+        self.a.execute("C:\\python.exe PrependPath=1 TargetDir=%s /passive" % self.install_path)
+        self.a.remove("C:\\python.exe")
 
 class Python27(Python, Dependency):
     """Backwards compatibility."""
